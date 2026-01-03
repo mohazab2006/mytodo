@@ -65,7 +65,3 @@ The AI features are a major focus for future phases, aiming to make task managem
 ## Credits
 
 Used [rapidtables](https://www.rapidtables.com) as a reference for some parts of the implementation.
-
-## License
-
-Personal project - built for my own use and learning purposes.
