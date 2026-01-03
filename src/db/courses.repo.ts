@@ -20,7 +20,6 @@ export async function getCourseById(id: string): Promise<Course | null> {
 }
 
 export async function createCourse(input: CreateCourseInput): Promise<Course> {
-  const db = await getDatabase();
   const id = generateId();
   const now = new Date().toISOString();
 
@@ -33,7 +32,7 @@ export async function createCourse(input: CreateCourseInput): Promise<Course> {
       input.name,
       input.term,
       input.target_grade_default ?? 90,
-      (input as any).color || '#6B7280',
+      input.color || '#6B7280',
       now,
       now,
     ]
@@ -45,7 +44,6 @@ export async function createCourse(input: CreateCourseInput): Promise<Course> {
 }
 
 export async function updateCourse(input: UpdateCourseInput): Promise<Course> {
-  const db = await getDatabase();
   const now = new Date().toISOString();
 
   const updates: string[] = [];
@@ -66,6 +64,10 @@ export async function updateCourse(input: UpdateCourseInput): Promise<Course> {
   if (input.target_grade_default !== undefined) {
     updates.push('target_grade_default = ?');
     values.push(input.target_grade_default);
+  }
+  if (input.color !== undefined) {
+    updates.push('color = ?');
+    values.push(input.color || '#6B7280');
   }
 
   updates.push('updated_at = ?');

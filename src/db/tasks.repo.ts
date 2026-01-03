@@ -1,6 +1,6 @@
 import { getDatabase, executeWithRetry } from './client';
 import { generateId } from '../lib/utils';
-import type { Task, TaskWithCourse, CreateTaskInput, UpdateTaskInput, Course } from '../lib/types';
+import type { Task, TaskWithCourse, CreateTaskInput, UpdateTaskInput } from '../lib/types';
 
 export interface TaskFilters {
   courseIds?: string[];
@@ -39,6 +39,14 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
       t.updated_at as task_updated_at,
       t.deleted_at as task_deleted_at,
 
+      tg.task_id as grade_task_id,
+      tg.grade_percent as grade_percent,
+      tg.weight_percent as grade_weight_percent,
+      tg.is_graded as grade_is_graded,
+      tg.counts as grade_counts,
+      tg.created_at as grade_created_at,
+      tg.updated_at as grade_updated_at,
+
       c.id as course_id,
       c.code as course_code,
       c.name as course_name,
@@ -56,6 +64,7 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
       lc.updated_at as life_category_updated_at,
       lc.deleted_at as life_category_deleted_at
     FROM tasks t
+    LEFT JOIN task_grades tg ON tg.task_id = t.id
     LEFT JOIN courses c ON t.course_id = c.id AND c.deleted_at IS NULL
     LEFT JOIN life_categories lc ON t.life_category_id = lc.id AND lc.deleted_at IS NULL
     WHERE t.deleted_at IS NULL
@@ -90,7 +99,6 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
   }
 
   if (filters?.dueRange) {
-    const now = new Date();
     switch (filters.dueRange) {
       case 'overdue':
         query += ` AND t.due_at < datetime('now') AND date(t.due_at) != date('now')`;
@@ -99,7 +107,10 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
         query += ` AND date(t.due_at) = date('now')`;
         break;
       case '7days':
-        query += ` AND t.due_at BETWEEN datetime('now') AND datetime('now', '+7 days')`;
+        // "Next 7 days" should NOT overlap with "Today".
+        // Use calendar-day boundaries: tomorrow (start of day) through 7 days after tomorrow.
+        query += ` AND t.due_at >= datetime('now', 'start of day', '+1 day')`;
+        query += ` AND t.due_at < datetime('now', 'start of day', '+8 day')`;
         break;
     }
   }
@@ -179,6 +190,21 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
         };
       }
 
+      if (row.grade_task_id) {
+        task.grade = {
+          task_id: row.grade_task_id,
+          grade_percent: row.grade_percent === null || row.grade_percent === undefined ? null : Number(row.grade_percent),
+          weight_percent:
+            row.grade_weight_percent === null || row.grade_weight_percent === undefined
+              ? null
+              : Number(row.grade_weight_percent),
+          is_graded: Boolean(row.grade_is_graded),
+          counts: Boolean(row.grade_counts),
+          created_at: row.grade_created_at,
+          updated_at: row.grade_updated_at,
+        };
+      }
+
       tasksMap.set(row.task_id, task);
     }
   }
@@ -196,7 +222,6 @@ export async function getTaskById(id: string): Promise<Task | null> {
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
-  const db = await getDatabase();
   const id = generateId();
   const now = new Date().toISOString();
 
@@ -231,7 +256,6 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 }
 
 export async function updateTask(input: UpdateTaskInput): Promise<Task> {
-  const db = await getDatabase();
   const now = new Date().toISOString();
 
   // Get current task first

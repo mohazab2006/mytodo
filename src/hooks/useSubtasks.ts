@@ -36,7 +36,7 @@ export function useDeleteSubtask() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, taskId }: { id: string; taskId: string }) =>
+    mutationFn: ({ id }: { id: string; taskId: string }) =>
       subtasksRepo.deleteSubtask(id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['subtasks', variables.taskId] });

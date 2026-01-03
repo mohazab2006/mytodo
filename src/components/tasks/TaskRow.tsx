@@ -109,6 +109,12 @@ export default function TaskRow({ task }: TaskRowProps) {
               {task.title}
             </span>
 
+            {overdue && !isDone && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] border border-red-500/30 bg-red-500/10 text-red-500">
+                Overdue
+              </span>
+            )}
+
             {task.course && (
               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
                 <span

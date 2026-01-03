@@ -60,7 +60,11 @@ export default function TaskList({ tasks }: TaskListProps) {
 
         return (
           <div key={group}>
-            <h2 className="text-lg font-semibold mb-3 text-foreground">
+            <h2
+              className={`text-lg font-semibold mb-3 ${
+                group === 'overdue' ? 'text-red-500' : 'text-foreground'
+              }`}
+            >
               {groupLabels[group]} ({groupTasks.length})
             </h2>
             <div className="space-y-2">

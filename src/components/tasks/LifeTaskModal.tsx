@@ -47,12 +47,6 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
       : emptyDefaults,
   });
 
-  const ensureCategoryExists = async () => {
-    const current = (getValues('life_category_id') || '').trim();
-    if (!current) return;
-    // We store the selected category by id, but allow typing a new name into this field using a separate input.
-  };
-
   useEffect(() => {
     // When opening, always reset the form so "New Task" is a fresh blank form.
     if (!isOpen) return;

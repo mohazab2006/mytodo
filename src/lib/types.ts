@@ -70,6 +70,16 @@ export interface Task {
   deleted_at: string | null;
 }
 
+export interface TaskGrade {
+  task_id: string;
+  grade_percent: number | null;   // can exceed 100 (bonus)
+  weight_percent: number | null;  // % of final grade
+  is_graded: boolean;
+  counts: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Subtask {
   id: string;
   task_id: string;
@@ -85,6 +95,7 @@ export interface TaskWithCourse extends Task {
   course?: Course;
   lifeCategory?: LifeCategory;
   subtasks?: Subtask[];
+  grade?: TaskGrade;
 }
 
 export interface LifeCategory {
@@ -111,6 +122,7 @@ export interface CreateCourseInput {
   name: string;
   term: string;
   target_grade_default?: number;
+  color?: string;
 }
 
 export interface UpdateCourseInput {
@@ -119,6 +131,7 @@ export interface UpdateCourseInput {
   name?: string;
   term?: string;
   target_grade_default?: number;
+  color?: string;
 }
 
 export interface CreateTaskInput {

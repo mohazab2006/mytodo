@@ -7,6 +7,7 @@ import { useCourses } from '../../hooks/useCourses';
 import { useSubtasks, useCreateSubtask, useUpdateSubtask, useDeleteSubtask } from '../../hooks/useSubtasks';
 import { useTaskTypes } from '../../hooks/useTaskTypes';
 import { useCreateTaskType } from '../../hooks/useTaskTypes';
+import { useDeleteTaskGrade, useUpsertTaskGrade } from '../../hooks/useGrades';
 
 interface SchoolTaskModalProps {
   task?: TaskWithCourse;
@@ -28,6 +29,8 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
   const deleteSubtask = useDeleteSubtask();
   const { data: taskTypes = [] } = useTaskTypes();
   const createTaskType = useCreateTaskType();
+  const upsertGrade = useUpsertTaskGrade();
+  const deleteGrade = useDeleteTaskGrade();
 
   const emptyDefaults = {
     title: '',
@@ -35,9 +38,13 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
     due_at: '',
     type: '',
     course_id: '',
+    weight_percent: '',
+    counts: true,
+    is_graded: false,
+    grade_percent: '',
   };
 
-  const { register, handleSubmit, reset, setValue, getValues } = useForm({
+  const { register, handleSubmit, reset, setValue, getValues, watch } = useForm({
     mode: 'onSubmit',
     defaultValues: task
       ? {
@@ -46,6 +53,16 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
           due_at: task.due_at || '',
           type: task.type,
           course_id: task.course_id || '',
+          weight_percent:
+            task.grade?.weight_percent === null || task.grade?.weight_percent === undefined
+              ? ''
+              : String(task.grade.weight_percent),
+          counts: task.grade?.counts ?? true,
+          is_graded: task.grade?.is_graded ?? false,
+          grade_percent:
+            task.grade?.grade_percent === null || task.grade?.grade_percent === undefined
+              ? ''
+              : String(task.grade.grade_percent),
         }
       : emptyDefaults,
   });
@@ -61,6 +78,16 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
         due_at: task.due_at || '',
         type: task.type,
         course_id: task.course_id || '',
+        weight_percent:
+          task.grade?.weight_percent === null || task.grade?.weight_percent === undefined
+            ? ''
+            : String(task.grade.weight_percent),
+        counts: task.grade?.counts ?? true,
+        is_graded: task.grade?.is_graded ?? false,
+        grade_percent:
+          task.grade?.grade_percent === null || task.grade?.grade_percent === undefined
+            ? ''
+            : String(task.grade.grade_percent),
       });
     } else {
       reset(emptyDefaults);
@@ -70,21 +97,59 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
   const onSubmit = async (data: any) => {
     try {
       const normalized = { ...data, type: (data.type || '').trim() || undefined };
+      const course_id = data.course_id || null;
+
+      const parsedWeight =
+        data.weight_percent === '' || data.weight_percent === null || data.weight_percent === undefined
+          ? null
+          : Number(data.weight_percent);
+      const counts = Boolean(data.counts);
+      const is_graded = Boolean(data.is_graded);
+      const parsedGrade =
+        !is_graded
+          ? null
+          : data.grade_percent === '' || data.grade_percent === null || data.grade_percent === undefined
+            ? null
+            : Number(data.grade_percent);
+
       if (isEditing) {
         await updateTask.mutateAsync({
           id: task.id,
           ...normalized,
-          course_id: data.course_id || null,
+          course_id,
           due_at: data.due_at || null,
         });
+
+        if (course_id) {
+          await upsertGrade.mutateAsync({
+            task_id: task.id,
+            weight_percent: parsedWeight,
+            counts,
+            is_graded,
+            grade_percent: parsedGrade,
+          });
+        } else {
+          // If a task is no longer linked to a course, remove grade metadata.
+          await deleteGrade.mutateAsync(task.id);
+        }
       } else {
-        await createTask.mutateAsync({
+        const created = await createTask.mutateAsync({
           ...normalized,
-          course_id: data.course_id || null,
+          course_id,
           due_at: data.due_at || null,
           status: 'todo',
           workspace: 'school',
         });
+
+        if (course_id) {
+          await upsertGrade.mutateAsync({
+            task_id: created.id,
+            weight_percent: parsedWeight,
+            counts,
+            is_graded,
+            grade_percent: parsedGrade,
+          });
+        }
       }
       onClose();
     } catch (error) {
@@ -150,6 +215,10 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
   };
 
   if (!isOpen) return null;
+
+  const selectedCourseId = watch('course_id');
+  const showGrading = !!selectedCourseId;
+  const isGraded = watch('is_graded');
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -235,6 +304,63 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
                 className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
+
+            {/* Grading section (School tasks only, when linked to a course) */}
+            {showGrading ? (
+              <div className="border border-border rounded-lg p-4 bg-muted/40">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-semibold">Grading</div>
+                  <div className="text-xs text-muted-foreground">Done ≠ graded (status never affects grades)</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Weight (%)</label>
+                    <input
+                      {...register('weight_percent')}
+                      inputMode="decimal"
+                      placeholder="e.g. 5"
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <div className="text-xs text-muted-foreground mt-1">Percent of final grade.</div>
+                  </div>
+
+                  <div className="flex items-end">
+                    <label className="inline-flex items-center gap-2 text-sm font-medium select-none">
+                      <input type="checkbox" {...register('counts')} className="accent-foreground" />
+                      Counts toward grade
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div className="flex items-center">
+                    <label className="inline-flex items-center gap-2 text-sm font-medium select-none">
+                      <input type="checkbox" {...register('is_graded')} className="accent-foreground" />
+                      Graded?
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Grade (%)</label>
+                    <input
+                      {...register('grade_percent')}
+                      inputMode="decimal"
+                      placeholder={isGraded ? 'e.g. 92 (bonus allowed >100)' : 'Enable “Graded?” first'}
+                      disabled={!isGraded}
+                      className={`w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                        isGraded ? 'bg-background' : 'bg-muted text-muted-foreground'
+                      }`}
+                    />
+                    <div className="text-xs text-muted-foreground mt-1">Bonus supported (can exceed 100%).</div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground mt-3">
+                  Tip: uncheck “Counts toward grade” to manually exclude (“drop”) an item.
+                </div>
+              </div>
+            ) : null}
 
             {isEditing && (
               <div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { Task, TaskWithCourse } from '../../lib/types';
+import type { TaskWithCourse } from '../../lib/types';
 import { TaskType, TaskStatus, Priority } from '../../lib/types';
 import { taskSchema } from '../../lib/validation';
 import { useCreateTask, useUpdateTask, useDeleteTask } from '../../hooks/useTasks';

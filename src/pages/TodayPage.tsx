@@ -15,12 +15,11 @@ export default function TodayPage() {
     includeCompleted: false,
   });
 
-  if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
-  }
-
-  const allTasks = [...overdueTasks, ...tasks];
-  const availableTypes = useMemo(() => Array.from(new Set(allTasks.map((t) => t.type))), [allTasks]);
+  const allTasks = useMemo(() => [...overdueTasks, ...tasks], [overdueTasks, tasks]);
+  const availableTypes = useMemo(
+    () => Array.from(new Set(allTasks.map((t) => t.type).filter(Boolean) as string[])),
+    [allTasks]
+  );
   const filtered = useMemo(() => {
     if (!typeFilter) return allTasks;
     return allTasks.filter((t) => t.type === typeFilter);
@@ -29,7 +28,7 @@ export default function TodayPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Today</h1>
+        <h1 className="text-3xl font-semibold">Today</h1>
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -44,7 +43,7 @@ export default function TodayPage() {
           ))}
         </select>
       </div>
-      <TaskList tasks={filtered} />
+      {isLoading ? <div className="text-muted-foreground">Loading...</div> : <TaskList tasks={filtered} />}
     </div>
   );
 }

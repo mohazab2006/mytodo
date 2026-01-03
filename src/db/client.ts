@@ -73,6 +73,7 @@ async function runMigrations(database: Database): Promise<void> {
     migration4_add_task_life_category_id,
     migration5_add_task_types,
     migration6_add_task_workspace,
+    migration7_add_task_grades,
   ];
 
   for (let i = currentVersion; i < migrations.length; i++) {
@@ -238,5 +239,22 @@ async function migration6_add_task_workspace(db: Database): Promise<void> {
     // Backfill existing rows: if a task has a course_id it belongs to school, otherwise life.
     await db.execute(`UPDATE tasks SET workspace = 'school' WHERE course_id IS NOT NULL`);
   }
+}
+
+async function migration7_add_task_grades(db: Database): Promise<void> {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS task_grades (
+      task_id TEXT PRIMARY KEY,
+      grade_percent REAL NULL,          -- can exceed 100 (bonus)
+      weight_percent REAL NULL,         -- % of final grade
+      is_graded INTEGER NOT NULL DEFAULT 0,
+      counts INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `);
+
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_task_grades_task_id ON task_grades(task_id)');
 }
 

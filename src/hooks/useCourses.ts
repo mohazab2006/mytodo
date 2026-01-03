@@ -48,7 +48,8 @@ export function useDeleteCourse() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
       // Course deletion unlinks tasks; refresh task lists immediately.
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
     },
   });
 }

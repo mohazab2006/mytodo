@@ -24,7 +24,9 @@ export function useCreateTask() {
   return useMutation({
     mutationFn: (input: CreateTaskInput) => tasksRepo.createTask(input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      // Ensure all filtered task queries (['tasks', filters]) update immediately.
+      queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
     },
   });
 }
@@ -35,8 +37,9 @@ export function useUpdateTask() {
   return useMutation({
     mutationFn: (input: UpdateTaskInput) => tasksRepo.updateTask(input),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['tasks', data.id], exact: true });
+      queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
     },
   });
 }
@@ -47,7 +50,8 @@ export function useDeleteTask() {
   return useMutation({
     mutationFn: (id: string) => tasksRepo.deleteTask(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
     },
   });
 }

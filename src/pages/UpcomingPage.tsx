@@ -9,11 +9,10 @@ export default function UpcomingPage() {
     includeCompleted: false,
   });
 
-  if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
-  }
-
-  const availableTypes = useMemo(() => Array.from(new Set(tasks.map((t) => t.type))), [tasks]);
+  const availableTypes = useMemo(
+    () => Array.from(new Set(tasks.map((t) => t.type).filter(Boolean) as string[])),
+    [tasks]
+  );
   const filtered = useMemo(() => {
     if (!typeFilter) return tasks;
     return tasks.filter((t) => t.type === typeFilter);
@@ -22,7 +21,7 @@ export default function UpcomingPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Upcoming</h1>
+        <h1 className="text-3xl font-semibold">Upcoming</h1>
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -37,7 +36,7 @@ export default function UpcomingPage() {
           ))}
         </select>
       </div>
-      <TaskList tasks={filtered} />
+      {isLoading ? <div className="text-muted-foreground">Loading...</div> : <TaskList tasks={filtered} />}
     </div>
   );
 }
