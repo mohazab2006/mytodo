@@ -26,6 +26,7 @@ export function useCreateTask() {
     onSuccess: () => {
       // Ensure all filtered task queries (['tasks', filters]) update immediately.
       queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['recurringTemplates'], exact: false });
       queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
     },
   });
@@ -51,8 +52,28 @@ export function useDeleteTask() {
     mutationFn: (id: string) => tasksRepo.deleteTask(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['recurringTemplates'], exact: false });
       queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
     },
+  });
+}
+
+export function useDeleteRecurringInstanceAndFuture() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => tasksRepo.deleteRecurringInstanceAndFuture(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'], exact: false });
+      queryClient.refetchQueries({ queryKey: ['tasks'], exact: false, type: 'active' });
+    },
+  });
+}
+
+export function useRecurringTemplates() {
+  return useQuery({
+    queryKey: ['recurringTemplates'],
+    queryFn: () => tasksRepo.getRecurringTemplates(),
   });
 }
 

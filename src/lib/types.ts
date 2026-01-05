@@ -51,6 +51,16 @@ export interface Course {
   deleted_at: string | null;
 }
 
+export interface RecurrenceRule {
+  frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  interval: number;
+  byWeekday?: string[]; // ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+  timeOfDay?: string; // 'HH:MM' format
+  endType: 'NEVER' | 'UNTIL' | 'COUNT';
+  untilDate?: string; // ISO date string
+  count?: number;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -68,6 +78,13 @@ export interface Task {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  // Recurring task fields
+  isRecurringTemplate?: boolean;
+  recurrenceRuleJson?: string | null;
+  recurringSeriesId?: string | null;
+  parentTemplateId?: string | null;
+  occurrenceDate?: string | null;
+  isOccurrenceOverride?: boolean;
 }
 
 export interface TaskGrade {
@@ -145,6 +162,13 @@ export interface CreateTaskInput {
   priority_manual?: Priority;
   effort_estimate_minutes?: number;
   tags?: string;
+  // Recurring task fields
+  isRecurringTemplate?: boolean;
+  recurrenceRuleJson?: string | null;
+  recurringSeriesId?: string | null;
+  parentTemplateId?: string | null;
+  occurrenceDate?: string | null;
+  isOccurrenceOverride?: boolean;
 }
 
 export interface UpdateTaskInput {
@@ -159,6 +183,13 @@ export interface UpdateTaskInput {
   priority_manual?: Priority;
   effort_estimate_minutes?: number;
   tags?: string;
+  // Recurring task fields
+  isRecurringTemplate?: boolean;
+  recurrenceRuleJson?: string | null;
+  recurringSeriesId?: string | null;
+  parentTemplateId?: string | null;
+  occurrenceDate?: string | null;
+  isOccurrenceOverride?: boolean;
 }
 
 export interface CreateSubtaskInput {

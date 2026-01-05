@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { useTasks } from '../hooks/useTasks';
+import { useTasks, useRecurringTemplates } from '../hooks/useTasks';
 import TaskList from '../components/tasks/TaskList';
+import type { RecurrenceRule } from '../lib/types';
 
 type WeatherInfo = {
   locationLabel: string;
@@ -11,70 +12,148 @@ type WeatherInfo = {
   fetchedAtIso: string;
 };
 
-function weatherTheme(code: number): {
+function weatherTheme(code: number, currentHour?: number): {
   label: string;
   icon: 'sun' | 'cloud' | 'rain' | 'snow' | 'storm' | 'fog';
   accentClass: string;
   bgClass: string;
-  effect: 'rain' | 'snow' | 'sun' | 'cloud' | 'none';
+  effect: 'rain' | 'snow' | 'sun' | 'cloud' | 'fog' | 'storm' | 'stars' | 'sunset';
 } {
+  // Determine if it's nighttime (roughly 6 PM to 6 AM)
+  const isNight = currentHour !== undefined && (currentHour >= 18 || currentHour < 6);
+  const isSunset = currentHour !== undefined && (currentHour >= 17 && currentHour < 19);
+  
   // Open-Meteo weather codes: https://open-meteo.com/en/docs
   if (code === 0) {
-    return { label: 'Sunny', icon: 'sun', accentClass: 'text-amber-500', bgClass: 'bg-amber-500/10', effect: 'sun' };
+    return { 
+      label: isNight ? 'Clear' : 'Sunny', 
+      icon: 'sun', 
+      accentClass: isNight ? 'text-slate-300' : 'text-amber-500', 
+      bgClass: isNight ? 'bg-slate-500/10' : 'bg-amber-500/10', 
+      effect: isNight ? 'stars' : 'sun'
+    };
   }
   if (code === 1 || code === 2) {
     return {
-      label: 'Mostly Sunny',
+      label: isNight ? 'Mostly Clear' : 'Mostly Sunny',
       icon: 'sun',
-      accentClass: 'text-amber-500',
-      bgClass: 'bg-amber-500/10',
-      effect: 'sun',
+      accentClass: isNight ? 'text-slate-300' : isSunset ? 'text-orange-500' : 'text-amber-500',
+      bgClass: isNight ? 'bg-slate-500/10' : 'bg-amber-500/10',
+      effect: isNight ? 'stars' : isSunset ? 'sunset' : 'sun',
     };
   }
   if (code === 3) {
-    return { label: 'Cloudy', icon: 'cloud', accentClass: 'text-slate-500', bgClass: 'bg-slate-500/10', effect: 'cloud' };
+    return { 
+      label: isNight ? 'Cloudy Night' : 'Cloudy', 
+      icon: 'cloud', 
+      accentClass: isNight ? 'text-slate-400' : 'text-slate-500', 
+      bgClass: isNight ? 'bg-slate-600/15' : 'bg-slate-500/10', 
+      effect: 'cloud' 
+    };
   }
   if (code === 45 || code === 48) {
-    return { label: 'Foggy', icon: 'fog', accentClass: 'text-slate-500', bgClass: 'bg-slate-500/10', effect: 'cloud' };
+    return { 
+      label: 'Foggy', 
+      icon: 'fog', 
+      accentClass: 'text-slate-400', 
+      bgClass: 'bg-slate-500/15', 
+      effect: 'fog' 
+    };
   }
   if (code >= 51 && code <= 57) {
-    return { label: 'Drizzle', icon: 'rain', accentClass: 'text-sky-500', bgClass: 'bg-sky-500/10', effect: 'rain' };
+    return { 
+      label: 'Drizzle', 
+      icon: 'rain', 
+      accentClass: 'text-sky-400', 
+      bgClass: 'bg-sky-500/15', 
+      effect: 'rain' 
+    };
   }
   if (code >= 61 && code <= 67) {
-    return { label: 'Rainy', icon: 'rain', accentClass: 'text-sky-500', bgClass: 'bg-sky-500/10', effect: 'rain' };
+    return { 
+      label: 'Rainy', 
+      icon: 'rain', 
+      accentClass: 'text-sky-500', 
+      bgClass: 'bg-sky-500/15', 
+      effect: 'rain' 
+    };
   }
   if (code >= 71 && code <= 77) {
-    return { label: 'Snowy', icon: 'snow', accentClass: 'text-cyan-500', bgClass: 'bg-cyan-500/10', effect: 'snow' };
+    return { 
+      label: 'Snowy', 
+      icon: 'snow', 
+      accentClass: 'text-cyan-400', 
+      bgClass: 'bg-cyan-500/15', 
+      effect: 'snow' 
+    };
   }
   if (code >= 80 && code <= 82) {
-    return { label: 'Rainy', icon: 'rain', accentClass: 'text-sky-500', bgClass: 'bg-sky-500/10', effect: 'rain' };
+    return { 
+      label: 'Heavy Rain', 
+      icon: 'rain', 
+      accentClass: 'text-blue-600', 
+      bgClass: 'bg-blue-500/20', 
+      effect: 'rain' 
+    };
   }
   if (code >= 95) {
-    return { label: 'Stormy', icon: 'storm', accentClass: 'text-violet-500', bgClass: 'bg-violet-500/10', effect: 'rain' };
+    return { 
+      label: 'Stormy', 
+      icon: 'storm', 
+      accentClass: 'text-violet-400', 
+      bgClass: 'bg-violet-500/20', 
+      effect: 'storm' 
+    };
   }
-  return { label: 'Cloudy', icon: 'cloud', accentClass: 'text-slate-500', bgClass: 'bg-slate-500/10', effect: 'cloud' };
+  return { 
+    label: isNight ? 'Cloudy Night' : 'Cloudy', 
+    icon: 'cloud', 
+    accentClass: isNight ? 'text-slate-400' : 'text-slate-500', 
+    bgClass: isNight ? 'bg-slate-600/15' : 'bg-slate-500/10', 
+    effect: 'cloud' 
+  };
 }
 
 // Weather effect components
 function RainEffect() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {Array.from({ length: 30 }).map((_, i) => (
+      {/* Light rain drops */}
+      {Array.from({ length: 40 }).map((_, i) => (
         <div
           key={i}
-          className="absolute w-1 h-6 bg-sky-500/70 rounded-full"
+          className="absolute w-0.5 h-8 bg-sky-400/80 rounded-full"
           style={{
-            left: `${(i * 3.5) % 100}%`,
-            top: `${-15 + (i * 2.5) % 25}%`,
-            animation: `rain-fall ${0.8 + (i % 3) * 0.2}s linear infinite`,
-            animationDelay: `${(i * 0.08) % 1}s`,
+            left: `${(i * 2.8) % 100}%`,
+            top: `${-20 + (i * 2) % 30}%`,
+            animation: `rain-fall ${0.6 + (i % 4) * 0.15}s linear infinite`,
+            animationDelay: `${(i * 0.05) % 1.2}s`,
+            boxShadow: '0 0 2px rgba(56, 189, 248, 0.6)',
+          }}
+        />
+      ))}
+      {/* Medium rain drops */}
+      {Array.from({ length: 25 }).map((_, i) => (
+        <div
+          key={`med-${i}`}
+          className="absolute w-1 h-10 bg-blue-500/90 rounded-full"
+          style={{
+            left: `${(i * 4.2) % 100}%`,
+            top: `${-25 + (i * 3) % 35}%`,
+            animation: `rain-fall-heavy ${0.5 + (i % 3) * 0.1}s linear infinite`,
+            animationDelay: `${(i * 0.07) % 1}s`,
+            boxShadow: '0 0 3px rgba(59, 130, 246, 0.7)',
           }}
         />
       ))}
       <style>{`
         @keyframes rain-fall {
           0% { transform: translateY(-120px) translateX(0); opacity: 0.9; }
-          100% { transform: translateY(220px) translateX(15px); opacity: 0.5; }
+          100% { transform: translateY(220px) translateX(12px); opacity: 0.4; }
+        }
+        @keyframes rain-fall-heavy {
+          0% { transform: translateY(-120px) translateX(0); opacity: 1; }
+          100% { transform: translateY(220px) translateX(18px); opacity: 0.5; }
         }
       `}</style>
     </div>
@@ -84,25 +163,66 @@ function RainEffect() {
 function SnowEffect() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {Array.from({ length: 25 }).map((_, i) => (
+      {/* Small snowflakes */}
+      {Array.from({ length: 30 }).map((_, i) => (
         <div
           key={i}
-          className="absolute bg-cyan-200/80 rounded-full"
+          className="absolute bg-white/90 rounded-full"
           style={{
-            width: `${3 + (i % 3)}px`,
-            height: `${3 + (i % 3)}px`,
-            left: `${(i * 4) % 100}%`,
-            top: `${-15 + (i * 3) % 30}%`,
-            animation: `snow-fall ${2.5 + (i % 4) * 0.4}s linear infinite`,
-            animationDelay: `${(i * 0.12) % 1.8}s`,
-            boxShadow: '0 0 2px rgba(207, 250, 254, 0.8)',
+            width: `${2 + (i % 2)}px`,
+            height: `${2 + (i % 2)}px`,
+            left: `${(i * 3.5) % 100}%`,
+            top: `${-20 + (i * 2.5) % 35}%`,
+            animation: `snow-fall ${2 + (i % 5) * 0.3}s linear infinite`,
+            animationDelay: `${(i * 0.1) % 2}s`,
+            boxShadow: '0 0 3px rgba(255, 255, 255, 0.9), 0 0 6px rgba(207, 250, 254, 0.6)',
+          }}
+        />
+      ))}
+      {/* Medium snowflakes */}
+      {Array.from({ length: 20 }).map((_, i) => (
+        <div
+          key={`med-${i}`}
+          className="absolute bg-white rounded-full"
+          style={{
+            width: `${4 + (i % 3)}px`,
+            height: `${4 + (i % 3)}px`,
+            left: `${(i * 5) % 100}%`,
+            top: `${-25 + (i * 4) % 40}%`,
+            animation: `snow-fall-slow ${3 + (i % 4) * 0.5}s linear infinite`,
+            animationDelay: `${(i * 0.15) % 2.5}s`,
+            boxShadow: '0 0 4px rgba(255, 255, 255, 1), 0 0 8px rgba(207, 250, 254, 0.7)',
+          }}
+        />
+      ))}
+      {/* Large snowflakes */}
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={`large-${i}`}
+          className="absolute bg-white rounded-full"
+          style={{
+            width: `${6 + (i % 2)}px`,
+            height: `${6 + (i % 2)}px`,
+            left: `${(i * 12.5) % 100}%`,
+            top: `${-30 + (i * 8) % 50}%`,
+            animation: `snow-fall-slowest ${4 + (i % 3) * 0.6}s linear infinite`,
+            animationDelay: `${(i * 0.2) % 3}s`,
+            boxShadow: '0 0 6px rgba(255, 255, 255, 1), 0 0 12px rgba(207, 250, 254, 0.8)',
           }}
         />
       ))}
       <style>{`
         @keyframes snow-fall {
           0% { transform: translateY(-120px) translateX(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(220px) translateX(40px) rotate(360deg); opacity: 0.6; }
+          100% { transform: translateY(220px) translateX(35px) rotate(360deg); opacity: 0.7; }
+        }
+        @keyframes snow-fall-slow {
+          0% { transform: translateY(-120px) translateX(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(220px) translateX(50px) rotate(720deg); opacity: 0.6; }
+        }
+        @keyframes snow-fall-slowest {
+          0% { transform: translateY(-120px) translateX(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(220px) translateX(60px) rotate(1080deg); opacity: 0.5; }
         }
       `}</style>
     </div>
@@ -112,27 +232,56 @@ function SnowEffect() {
 function SunEffect() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Sun glow layers */}
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full bg-amber-300/40 blur-3xl"
+        style={{
+          animation: 'sun-pulse-outer 4s ease-in-out infinite',
+        }}
+      />
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-amber-400/50 blur-2xl"
         style={{
           animation: 'sun-pulse 3s ease-in-out infinite',
         }}
       />
-      {Array.from({ length: 12 }).map((_, i) => (
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-yellow-300/60 blur-xl"
+        style={{
+          animation: 'sun-pulse-inner 2.5s ease-in-out infinite',
+        }}
+      />
+      {/* Sun rays */}
+      {Array.from({ length: 16 }).map((_, i) => (
         <div
           key={i}
-          className="absolute top-1/2 left-1/2 w-1 h-12 bg-amber-400/60 origin-top rounded-full"
+          className="absolute top-1/2 left-1/2 w-1 h-14 bg-gradient-to-b from-amber-400/80 to-transparent origin-top rounded-full"
           style={{
-            transform: `translate(-50%, -50%) rotate(${i * 30}deg)`,
-            animation: `sun-rotate 25s linear infinite`,
-            boxShadow: '0 0 4px rgba(251, 191, 36, 0.6)',
+            transform: `translate(-50%, -50%) rotate(${i * 22.5}deg)`,
+            animation: `sun-rotate 30s linear infinite`,
+            boxShadow: '0 0 6px rgba(251, 191, 36, 0.7), 0 0 12px rgba(251, 191, 36, 0.4)',
           }}
         />
       ))}
+      {/* Bright center */}
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-yellow-200 blur-sm"
+        style={{
+          boxShadow: '0 0 20px rgba(254, 240, 138, 0.9)',
+        }}
+      />
       <style>{`
+        @keyframes sun-pulse-outer {
+          0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+          50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.2); }
+        }
         @keyframes sun-pulse {
           0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
           50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.15); }
+        }
+        @keyframes sun-pulse-inner {
+          0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+          50% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.1); }
         }
         @keyframes sun-rotate {
           0% { transform: translate(-50%, -50%) rotate(0deg); }
@@ -146,34 +295,52 @@ function SunEffect() {
 function CloudEffect() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {Array.from({ length: 4 }).map((_, i) => (
+      {/* Large clouds */}
+      {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
-          className="absolute rounded-full bg-slate-500/60"
+          className="absolute rounded-full bg-slate-400/70"
           style={{
-            width: `${50 + i * 20}px`,
-            height: `${35 + i * 15}px`,
-            left: `${15 + i * 25}%`,
-            top: `${5 + i * 20}%`,
-            animation: `cloud-drift ${7 + i * 1.5}s ease-in-out infinite`,
-            animationDelay: `${i * 1.2}s`,
-            filter: 'blur(8px)',
-            boxShadow: `0 0 ${20 + i * 5}px rgba(100, 116, 139, 0.4)`,
+            width: `${60 + i * 25}px`,
+            height: `${40 + i * 20}px`,
+            left: `${10 + i * 20}%`,
+            top: `${5 + i * 18}%`,
+            animation: `cloud-drift ${8 + i * 2}s ease-in-out infinite`,
+            animationDelay: `${i * 1.5}s`,
+            filter: 'blur(10px)',
+            boxShadow: `0 0 ${25 + i * 8}px rgba(100, 116, 139, 0.5)`,
           }}
         />
       ))}
-      {/* Additional smaller clouds for depth */}
-      {Array.from({ length: 3 }).map((_, i) => (
+      {/* Medium clouds */}
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={`med-${i}`}
+          className="absolute rounded-full bg-slate-300/60"
+          style={{
+            width: `${45 + i * 15}px`,
+            height: `${30 + i * 12}px`,
+            left: `${20 + i * 25}%`,
+            top: `${15 + i * 22}%`,
+            animation: `cloud-drift-slow ${10 + i * 2.5}s ease-in-out infinite`,
+            animationDelay: `${i * 2}s`,
+            filter: 'blur(8px)',
+            boxShadow: `0 0 ${20 + i * 5}px rgba(148, 163, 184, 0.4)`,
+          }}
+        />
+      ))}
+      {/* Small clouds for depth */}
+      {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={`small-${i}`}
-          className="absolute rounded-full bg-slate-400/50"
+          className="absolute rounded-full bg-slate-500/50"
           style={{
-            width: `${35 + i * 10}px`,
-            height: `${25 + i * 8}px`,
-            left: `${25 + i * 30}%`,
-            top: `${20 + i * 25}%`,
-            animation: `cloud-drift ${9 + i * 2}s ease-in-out infinite`,
-            animationDelay: `${i * 1.8}s`,
+            width: `${30 + i * 8}px`,
+            height: `${20 + i * 6}px`,
+            left: `${15 + i * 18}%`,
+            top: `${25 + i * 15}%`,
+            animation: `cloud-drift-fast ${6 + i * 1.5}s ease-in-out infinite`,
+            animationDelay: `${i * 1.2}s`,
             filter: 'blur(6px)',
           }}
         />
@@ -181,8 +348,256 @@ function CloudEffect() {
       <style>{`
         @keyframes cloud-drift {
           0%, 100% { transform: translateX(0) translateY(0); opacity: 0.7; }
-          50% { transform: translateX(15px) translateY(-8px); opacity: 0.85; }
+          50% { transform: translateX(20px) translateY(-10px); opacity: 0.85; }
         }
+        @keyframes cloud-drift-slow {
+          0%, 100% { transform: translateX(0) translateY(0); opacity: 0.6; }
+          50% { transform: translateX(15px) translateY(-8px); opacity: 0.8; }
+        }
+        @keyframes cloud-drift-fast {
+          0%, 100% { transform: translateX(0) translateY(0); opacity: 0.5; }
+          50% { transform: translateX(12px) translateY(-6px); opacity: 0.7; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function StarEffect() {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Small twinkling stars */}
+      {Array.from({ length: 35 }).map((_, i) => {
+        const size = 1 + (i % 3);
+        const left = (i * 6.5) % 100;
+        const top = (i * 9) % 100;
+        const delay = (i * 0.12) % 3;
+        const duration = 1.5 + (i % 4) * 0.3;
+        
+        return (
+          <div
+            key={i}
+            className="absolute rounded-full bg-white"
+            style={{
+              width: `${size}px`,
+              height: `${size}px`,
+              left: `${left}%`,
+              top: `${top}%`,
+              animation: `star-twinkle ${duration}s ease-in-out infinite`,
+              animationDelay: `${delay}s`,
+              boxShadow: `0 0 ${size * 2}px rgba(255, 255, 255, 0.9), 0 0 ${size * 4}px rgba(255, 255, 255, 0.5), 0 0 ${size * 6}px rgba(255, 255, 255, 0.2)`,
+            }}
+          />
+        );
+      })}
+      {/* Medium bright stars */}
+      {Array.from({ length: 8 }).map((_, i) => {
+        const left = 15 + (i * 12);
+        const top = 10 + (i * 15);
+        const delay = (i * 0.25) % 2;
+        
+        return (
+          <div
+            key={`bright-${i}`}
+            className="absolute rounded-full bg-white"
+            style={{
+              width: '2.5px',
+              height: '2.5px',
+              left: `${left}%`,
+              top: `${top}%`,
+              animation: `star-twinkle-bright 2s ease-in-out infinite`,
+              animationDelay: `${delay}s`,
+              boxShadow: '0 0 5px rgba(255, 255, 255, 1), 0 0 10px rgba(255, 255, 255, 0.7), 0 0 15px rgba(255, 255, 255, 0.4), 0 0 20px rgba(255, 255, 255, 0.2)',
+            }}
+          />
+        );
+      })}
+      {/* Large brightest stars */}
+      {Array.from({ length: 3 }).map((_, i) => {
+        const positions = [[30, 25], [70, 45], [50, 70]];
+        const [left, top] = positions[i];
+        const delay = i * 0.5;
+        
+        return (
+          <div
+            key={`large-${i}`}
+            className="absolute rounded-full bg-white"
+            style={{
+              width: '3px',
+              height: '3px',
+              left: `${left}%`,
+              top: `${top}%`,
+              animation: `star-twinkle-large 2.5s ease-in-out infinite`,
+              animationDelay: `${delay}s`,
+              boxShadow: '0 0 6px rgba(255, 255, 255, 1), 0 0 12px rgba(255, 255, 255, 0.8), 0 0 18px rgba(255, 255, 255, 0.5), 0 0 24px rgba(255, 255, 255, 0.3)',
+            }}
+          />
+        );
+      })}
+      <style>{`
+        @keyframes star-twinkle {
+          0%, 100% { opacity: 0.4; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.3); }
+        }
+        @keyframes star-twinkle-bright {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.4); }
+        }
+        @keyframes star-twinkle-large {
+          0%, 100% { opacity: 0.7; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.5); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function FogEffect() {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Fog layers */}
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full bg-slate-300/40"
+          style={{
+            width: `${80 + i * 30}px`,
+            height: `${20 + i * 10}px`,
+            left: `${-10 + i * 20}%`,
+            top: `${10 + i * 15}%`,
+            animation: `fog-drift ${12 + i * 3}s ease-in-out infinite`,
+            animationDelay: `${i * 2}s`,
+            filter: 'blur(15px)',
+            boxShadow: `0 0 ${30 + i * 10}px rgba(148, 163, 184, 0.3)`,
+          }}
+        />
+      ))}
+      {/* Additional mist layers */}
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={`mist-${i}`}
+          className="absolute rounded-full bg-slate-200/30"
+          style={{
+            width: `${60 + i * 20}px`,
+            height: `${15 + i * 8}px`,
+            left: `${5 + i * 25}%`,
+            top: `${25 + i * 18}%`,
+            animation: `fog-drift-slow ${15 + i * 4}s ease-in-out infinite`,
+            animationDelay: `${i * 2.5}s`,
+            filter: 'blur(12px)',
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes fog-drift {
+          0%, 100% { transform: translateX(0) translateY(0); opacity: 0.4; }
+          50% { transform: translateX(25px) translateY(-5px); opacity: 0.6; }
+        }
+        @keyframes fog-drift-slow {
+          0%, 100% { transform: translateX(0) translateY(0); opacity: 0.3; }
+          50% { transform: translateX(20px) translateY(-3px); opacity: 0.5; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function StormEffect() {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Lightning flashes */}
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="absolute inset-0 bg-white/0"
+          style={{
+            animation: `lightning ${4 + i * 2}s ease-in-out infinite`,
+            animationDelay: `${i * 1.5}s`,
+          }}
+        />
+      ))}
+      {/* Heavy rain for storm */}
+      {Array.from({ length: 50 }).map((_, i) => (
+        <div
+          key={`rain-${i}`}
+          className="absolute w-1 h-12 bg-blue-600/90 rounded-full"
+          style={{
+            left: `${(i * 2.2) % 100}%`,
+            top: `${-30 + (i * 1.8) % 40}%`,
+            animation: `rain-fall-storm ${0.4 + (i % 3) * 0.1}s linear infinite`,
+            animationDelay: `${(i * 0.03) % 0.8}s`,
+            boxShadow: '0 0 4px rgba(37, 99, 235, 0.8)',
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes lightning {
+          0%, 90%, 100% { opacity: 0; }
+          91% { opacity: 0.8; }
+          92% { opacity: 0; }
+          93% { opacity: 0.6; }
+          94% { opacity: 0; }
+        }
+        @keyframes rain-fall-storm {
+          0% { transform: translateY(-120px) translateX(0); opacity: 1; }
+          100% { transform: translateY(220px) translateX(20px); opacity: 0.6; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function SunsetEffect() {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Sunset gradient layers */}
+      <div
+        className="absolute inset-0 bg-gradient-to-b from-orange-500/30 via-pink-400/20 to-purple-300/15"
+        style={{
+          animation: 'sunset-pulse 4s ease-in-out infinite',
+        }}
+      />
+      {/* Warm glow */}
+      <div
+        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-32 rounded-full bg-orange-400/40 blur-3xl"
+        style={{
+          animation: 'sunset-glow 3s ease-in-out infinite',
+        }}
+      />
+      {/* Sun rays */}
+      {Array.from({ length: 12 }).map((_, i) => {
+        const rotation = i * 30 - 15;
+        return (
+          <div
+            key={i}
+            className="absolute bottom-0 left-1/2 w-1 h-20 bg-gradient-to-t from-orange-400/60 to-transparent origin-bottom rounded-full"
+            style={{
+              transform: `translateX(-50%) rotate(${rotation}deg)`,
+              animation: `sunset-rays-${i} 5s ease-in-out infinite`,
+              animationDelay: `${i * 0.2}s`,
+              boxShadow: '0 0 8px rgba(251, 146, 60, 0.6)',
+            }}
+          />
+        );
+      })}
+      <style>{`
+        @keyframes sunset-pulse {
+          0%, 100% { opacity: 0.8; }
+          50% { opacity: 1; }
+        }
+        @keyframes sunset-glow {
+          0%, 100% { opacity: 0.4; transform: translateX(-50%) scale(1); }
+          50% { opacity: 0.6; transform: translateX(-50%) scale(1.1); }
+        }
+        ${Array.from({ length: 12 }).map((_, i) => {
+          const rotation = i * 30 - 15;
+          return `
+            @keyframes sunset-rays-${i} {
+              0%, 100% { opacity: 0.5; transform: translateX(-50%) rotate(${rotation}deg) scaleY(1); }
+              50% { opacity: 0.8; transform: translateX(-50%) rotate(${rotation}deg) scaleY(1.2); }
+            }
+          `;
+        }).join('')}
       `}</style>
     </div>
   );
@@ -341,11 +756,39 @@ async function fetchWeatherInfo(): Promise<WeatherInfo> {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/20 p-4">
-      <div className="text-sm font-medium text-foreground mb-3">{title}</div>
+    <div className="rounded-xl border border-border bg-muted/20 p-5">
+      <div className="text-sm font-semibold text-foreground mb-3">{title}</div>
       {children}
     </div>
   );
+}
+
+function formatRecurrenceRule(rule: RecurrenceRule): string {
+  const interval = rule.interval > 1 ? `every ${rule.interval} ` : '';
+  
+  switch (rule.frequency) {
+    case 'DAILY':
+      return `${interval}Daily`;
+    case 'WEEKLY':
+      if (rule.byWeekday && rule.byWeekday.length > 0) {
+        const dayNames: Record<string, string> = {
+          MO: 'Mon',
+          TU: 'Tue',
+          WE: 'Wed',
+          TH: 'Thu',
+          FR: 'Fri',
+          SA: 'Sat',
+          SU: 'Sun',
+        };
+        const days = rule.byWeekday.map(d => dayNames[d] || d).join(', ');
+        return `${interval}Weekly on ${days}`;
+      }
+      return `${interval}Weekly`;
+    case 'MONTHLY':
+      return `${interval}Monthly`;
+    default:
+      return 'Recurring';
+  }
 }
 
 export default function HomePage() {
@@ -393,6 +836,7 @@ export default function HomePage() {
     dueRange: '7days',
     includeCompleted: false,
   });
+  const { data: recurringTemplates = [], isLoading: recurringLoading } = useRecurringTemplates();
 
   const isLoading = todayLoading || overdueLoading || upcomingLoading;
   const allRelevantUnique = useMemo(() => {
@@ -401,11 +845,11 @@ export default function HomePage() {
     return Array.from(map.values());
   }, [overdue, today, upcoming]);
   const schoolCount = useMemo(
-    () => allRelevantUnique.filter((t) => t.workspace === 'school').length,
+    () => allRelevantUnique.filter((t) => t.workspace === 'school' || (t.course_id && !t.workspace)).length,
     [allRelevantUnique]
   );
   const lifeCount = useMemo(
-    () => allRelevantUnique.filter((t) => t.workspace === 'life').length,
+    () => allRelevantUnique.filter((t) => t.workspace === 'life' || (t.life_category_id && !t.workspace) || (!t.workspace && !t.course_id && !t.life_category_id)).length,
     [allRelevantUnique]
   );
 
@@ -430,7 +874,7 @@ export default function HomePage() {
   }, [today, upcoming, overdue]);
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-7xl">
       <div className="flex items-start justify-between mb-8">
         <div>
           <div className="text-3xl font-semibold">Home</div>
@@ -445,26 +889,30 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card title="Snapshot">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-border bg-background/40 p-3">
-              <div className="text-xs text-muted-foreground">Today</div>
-              <div className="text-2xl font-semibold tabular-nums">{today.length + overdue.length}</div>
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border bg-background/40 p-3">
+                <div className="text-xs text-muted-foreground mb-1">Today</div>
+                <div className="text-2xl font-semibold tabular-nums">{today.length + overdue.length}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-background/40 p-3">
+                <div className="text-xs text-muted-foreground mb-1">Upcoming (7d)</div>
+                <div className="text-2xl font-semibold tabular-nums">{upcoming.length}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-background/40 p-3">
+                <div className="text-xs text-muted-foreground mb-1">School</div>
+                <div className="text-2xl font-semibold tabular-nums">{schoolCount}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-background/40 p-3">
+                <div className="text-xs text-muted-foreground mb-1">Life</div>
+                <div className="text-2xl font-semibold tabular-nums">{lifeCount}</div>
+              </div>
             </div>
-            <div className="rounded-lg border border-border bg-background/40 p-3">
-              <div className="text-xs text-muted-foreground">Upcoming (7d)</div>
-              <div className="text-2xl font-semibold tabular-nums">{upcoming.length}</div>
-            </div>
-            <div className="rounded-lg border border-border bg-background/40 p-3">
-              <div className="text-xs text-muted-foreground">School</div>
-              <div className="text-2xl font-semibold tabular-nums">{schoolCount}</div>
-            </div>
-            <div className="rounded-lg border border-border bg-background/40 p-3">
-              <div className="text-xs text-muted-foreground">Life</div>
-              <div className="text-2xl font-semibold tabular-nums">{lifeCount}</div>
-            </div>
-          </div>
+          )}
         </Card>
 
         <Card title="Weather">
@@ -487,39 +935,79 @@ export default function HomePage() {
           ) : weather ? (
             <div className="space-y-2">
               {(() => {
-                const theme = weatherTheme(weather.weatherCode);
+                const currentHour = now.getHours();
+                const theme = weatherTheme(weather.weatherCode, currentHour);
+                const isNight = currentHour >= 18 || currentHour < 6;
+                
+                // Enhanced gradient backgrounds based on weather
+                const gradientClass = 
+                  theme.effect === 'sun'
+                    ? 'bg-gradient-to-br from-amber-500/25 via-orange-400/20 to-yellow-300/15'
+                    : theme.effect === 'sunset'
+                    ? 'bg-gradient-to-br from-orange-500/30 via-pink-400/25 to-purple-300/20'
+                    : theme.effect === 'rain'
+                    ? 'bg-gradient-to-br from-sky-600/25 via-blue-500/20 to-indigo-400/15'
+                    : theme.effect === 'snow'
+                    ? 'bg-gradient-to-br from-cyan-500/25 via-blue-300/20 to-slate-200/15'
+                    : theme.effect === 'storm'
+                    ? 'bg-gradient-to-br from-violet-600/30 via-purple-500/25 to-indigo-400/20'
+                    : theme.effect === 'fog'
+                    ? 'bg-gradient-to-br from-slate-500/25 via-slate-400/20 to-slate-300/15'
+                    : theme.effect === 'stars'
+                    ? 'bg-gradient-to-br from-indigo-900/35 via-slate-800/30 to-slate-900/25'
+                    : theme.effect === 'cloud' && isNight
+                    ? 'bg-gradient-to-br from-slate-700/25 via-slate-600/20 to-slate-500/15'
+                    : theme.effect === 'cloud'
+                    ? 'bg-gradient-to-br from-slate-500/25 via-slate-400/20 to-slate-300/15'
+                    : 'bg-gradient-to-br from-slate-400/20 via-slate-300/15 to-slate-200/10';
+                
                 return (
-                  <div className={`rounded-lg border border-border ${theme.bgClass} p-3 relative overflow-hidden`}>
+                  <div className={`rounded-xl border-2 ${theme.accentClass.replace('text-', 'border-')} ${gradientClass} p-4 relative overflow-hidden shadow-lg`}>
                     {/* Dynamic weather effects */}
                     {theme.effect === 'rain' && <RainEffect />}
                     {theme.effect === 'snow' && <SnowEffect />}
                     {theme.effect === 'sun' && <SunEffect />}
                     {theme.effect === 'cloud' && <CloudEffect />}
+                    {theme.effect === 'fog' && <FogEffect />}
+                    {theme.effect === 'storm' && <StormEffect />}
+                    {theme.effect === 'stars' && <StarEffect />}
+                    {theme.effect === 'sunset' && <SunsetEffect />}
 
                     <div className="relative z-10">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs text-muted-foreground mb-1">Current</div>
-                          <div className="text-sm font-medium truncate mb-2" title={weather.locationLabel}>
-                            {weather.locationLabel}
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl ${theme.bgClass} border-2 ${theme.accentClass.replace('text-', 'border-')} shadow-md backdrop-blur-sm`}>
+                              <WeatherGlyph kind={theme.icon} className={`w-6 h-6 ${theme.accentClass}`} />
+                            </div>
+                            <div>
+                              <div className={`text-base font-bold ${theme.accentClass}`}>
+                                {theme.label}
+                              </div>
+                              <div className="text-xs text-muted-foreground/80 truncate" title={weather.locationLabel}>
+                                {weather.locationLabel}
+                              </div>
+                            </div>
                           </div>
 
-                          {/* Condition label on top of icon */}
-                          <div className="mb-2">
-                            <div className={`text-sm font-semibold ${theme.accentClass} inline-flex items-center gap-2`}>
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-md bg-background/60 border border-border/50 backdrop-blur-sm">
-                                <WeatherGlyph kind={theme.icon} className="w-5 h-5" />
+                          <div className="flex items-baseline gap-3 mt-3">
+                            <div className={`text-4xl font-bold tabular-nums leading-none ${theme.accentClass} drop-shadow-sm`}>
+                              {Math.round(weather.temperatureC)}°
+                            </div>
+                            <div className="text-lg text-muted-foreground/70 font-medium">C</div>
+                          </div>
+                          
+                          <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/30">
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-4 h-4 text-muted-foreground/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                              </svg>
+                              <span className="text-xs text-muted-foreground/80 font-medium">
+                                {Math.round(weather.windKmh)} km/h
                               </span>
-                              <span>{theme.label}</span>
                             </div>
-                          </div>
-
-                          <div className="flex items-baseline gap-2">
-                            <div className="text-3xl font-semibold tabular-nums leading-none">
-                              {Math.round(weather.temperatureC)}°C
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Wind {Math.round(weather.windKmh)} km/h
+                            <div className="text-xs text-muted-foreground/60">
+                              Updated {format(new Date(weather.fetchedAtIso), 'h:mm a')}
                             </div>
                           </div>
                         </div>
@@ -527,15 +1015,11 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={refreshWeather}
-                          className="px-2 py-1 text-xs rounded border border-border hover:bg-background/40 backdrop-blur-sm bg-background/60 relative z-20"
+                          className={`px-3 py-1.5 text-xs rounded-lg border-2 ${theme.accentClass.replace('text-', 'border-')} ${theme.bgClass} hover:opacity-80 backdrop-blur-sm transition-all relative z-20 shadow-sm`}
                           title="Refresh"
                         >
-                          Refresh
+                          ↻
                         </button>
-                      </div>
-
-                      <div className="mt-2 text-xs text-muted-foreground relative z-10">
-                        Updated {format(new Date(weather.fetchedAtIso), 'h:mm a')}
                       </div>
                     </div>
                   </div>
@@ -565,31 +1049,81 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="text-sm text-muted-foreground">
-              You’re clear — no tasks due today or in the next 7 days.
+              You're clear — no tasks due today or in the next 7 days.
+            </div>
+          )}
+        </Card>
+
+        <Card title="Recurring Tasks">
+          {recurringLoading ? (
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          ) : recurringTemplates.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No recurring tasks set up</div>
+          ) : (
+            <div className="space-y-2">
+              {recurringTemplates.slice(0, 4).map((template) => {
+                let rule: RecurrenceRule | null = null;
+                try {
+                  if (template.recurrenceRuleJson) {
+                    rule = JSON.parse(template.recurrenceRuleJson);
+                  }
+                } catch {
+                  // Invalid rule, skip
+                }
+
+                return (
+                  <div key={template.id} className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{template.title}</div>
+                      {rule && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {formatRecurrenceRule(rule)}
+                        </div>
+                      )}
+                      {template.lifeCategory && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span
+                            className="inline-block w-2 h-2 rounded-sm"
+                            style={{ backgroundColor: template.lifeCategory.color || '#6B7280' }}
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {template.lifeCategory.name}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {recurringTemplates.length > 4 && (
+                <div className="text-xs text-muted-foreground pt-1">
+                  +{recurringTemplates.length - 4} more
+                </div>
+              )}
             </div>
           )}
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-lg font-semibold">Today + Overdue</div>
-            <div className="text-xs text-muted-foreground">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-xl font-semibold">Today + Overdue</div>
+            <div className="text-sm text-muted-foreground">
               {today.length + overdue.length} total · {topToday.length} shown
             </div>
           </div>
-          {isLoading ? <div className="text-muted-foreground">Loading...</div> : <TaskList tasks={topToday} />}
+          {isLoading ? <div className="text-base text-muted-foreground">Loading...</div> : <TaskList tasks={topToday} />}
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-lg font-semibold">Next 7 days</div>
-            <div className="text-xs text-muted-foreground">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-xl font-semibold">Next 7 days</div>
+            <div className="text-sm text-muted-foreground">
               {upcoming.length} total · {topUpcoming.length} shown
             </div>
           </div>
-          {isLoading ? <div className="text-muted-foreground">Loading...</div> : <TaskList tasks={topUpcoming} />}
+          {isLoading ? <div className="text-base text-muted-foreground">Loading...</div> : <TaskList tasks={topUpcoming} />}
         </div>
       </div>
     </div>

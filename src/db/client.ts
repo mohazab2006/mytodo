@@ -74,6 +74,7 @@ async function runMigrations(database: Database): Promise<void> {
     migration5_add_task_types,
     migration6_add_task_workspace,
     migration7_add_task_grades,
+    migration8_add_recurring_tasks,
   ];
 
   for (let i = currentVersion; i < migrations.length; i++) {
@@ -256,5 +257,30 @@ async function migration7_add_task_grades(db: Database): Promise<void> {
   `);
 
   await db.execute('CREATE INDEX IF NOT EXISTS idx_task_grades_task_id ON task_grades(task_id)');
+}
+
+async function migration8_add_recurring_tasks(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>("PRAGMA table_info('tasks')");
+  
+  const addColumnIfMissing = async (colName: string, sqlType: string, defaultValue?: string) => {
+    const hasCol = cols.some((c) => c.name === colName);
+    if (!hasCol) {
+      const defaultClause = defaultValue !== undefined ? ` DEFAULT ${defaultValue}` : '';
+      await db.execute(`ALTER TABLE tasks ADD COLUMN ${colName} ${sqlType}${defaultClause}`);
+    }
+  };
+
+  await addColumnIfMissing('isRecurringTemplate', 'INTEGER', '0');
+  await addColumnIfMissing('recurrenceRuleJson', 'TEXT');
+  await addColumnIfMissing('recurringSeriesId', 'TEXT');
+  await addColumnIfMissing('parentTemplateId', 'TEXT');
+  await addColumnIfMissing('occurrenceDate', 'TEXT');
+  await addColumnIfMissing('isOccurrenceOverride', 'INTEGER', '0');
+
+  // Create indices for recurring queries
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_tasks_parent_template_id ON tasks(parentTemplateId)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_tasks_recurring_series_id ON tasks(recurringSeriesId)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_tasks_occurrence_date ON tasks(occurrenceDate)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_tasks_is_recurring_template ON tasks(isRecurringTemplate)');
 }
 

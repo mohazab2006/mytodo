@@ -99,62 +99,70 @@ export default function TaskRow({ task }: TaskRowProps) {
           )}
         </button>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`font-medium ${
-                isDone ? 'line-through text-muted-foreground' : ''
-              }`}
-            >
-              {task.title}
-            </span>
-
-            {overdue && !isDone && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] border border-red-500/30 bg-red-500/10 text-red-500">
-                Overdue
+        <div className="flex-1 min-w-0 flex items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`font-medium ${
+                  isDone ? 'line-through text-muted-foreground' : ''
+                }`}
+              >
+                {task.title}
               </span>
-            )}
 
-            {task.course && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
-                <span
-                  className="inline-block w-2 h-2 rounded-sm"
-                  style={{ backgroundColor: task.course.color || '#6B7280' }}
-                />
-                {task.course.code}
-              </span>
-            )}
+              {overdue && !isDone && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] border border-red-500/30 bg-red-500/10 text-red-500">
+                  Overdue
+                </span>
+              )}
 
-            {isLife && task.lifeCategory && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
-                <span
-                  className="inline-block w-2 h-2 rounded-sm"
-                  style={{ backgroundColor: task.lifeCategory.color || '#6B7280' }}
-                />
-                {task.lifeCategory.name}
-              </span>
-            )}
+              {task.course && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
+                  <span
+                    className="inline-block w-2 h-2 rounded-sm"
+                    style={{ backgroundColor: task.course.color || '#6B7280' }}
+                  />
+                  {task.course.code}
+                </span>
+              )}
 
-            {isSchool && task.type && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
-                <span
-                  className="inline-block w-2 h-2 rounded-sm"
-                  style={{ backgroundColor: typeColorMap[task.type] || '#6B7280' }}
-                />
-                {task.type}
-              </span>
+              {isLife && task.lifeCategory && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
+                  <span
+                    className="inline-block w-2 h-2 rounded-sm"
+                    style={{ backgroundColor: task.lifeCategory.color || '#6B7280' }}
+                  />
+                  {task.lifeCategory.name}
+                </span>
+              )}
+
+              {isSchool && task.type && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border bg-muted text-foreground/90">
+                  <span
+                    className="inline-block w-2 h-2 rounded-sm"
+                    style={{ backgroundColor: typeColorMap[task.type] || '#6B7280' }}
+                  />
+                  {task.type}
+                </span>
+              )}
+            </div>
+
+            {task.due_at && (
+              <div
+                className={`text-sm mt-1 ${
+                  overdue && !isDone
+                    ? 'text-red-500 font-medium'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {formatDueDate(task.due_at)}
+              </div>
             )}
           </div>
 
-          {task.due_at && (
-            <div
-              className={`text-sm mt-1 ${
-                overdue && !isDone
-                  ? 'text-red-500 font-medium'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              {formatDueDate(task.due_at)}
+          {task.description && (
+            <div className="text-sm text-foreground/90 max-w-[400px] truncate flex-shrink-0 font-normal border-l border-border pl-3 ml-2">
+              {task.description}
             </div>
           )}
         </div>

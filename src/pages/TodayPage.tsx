@@ -1,9 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useTasks } from '../hooks/useTasks';
 import TaskList from '../components/tasks/TaskList';
+import { ensureRecurringInstances } from '../services/recurrence';
 
 export default function TodayPage() {
   const [typeFilter, setTypeFilter] = useState<string>(''); // empty = all
+  
+  useEffect(() => {
+    // Ensure recurring instances are generated when opening Today view
+    ensureRecurringInstances(90).catch(console.error);
+  }, []);
+
   const { data: tasks = [], isLoading } = useTasks({
     dueRange: 'today',
     includeCompleted: false,

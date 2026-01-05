@@ -38,6 +38,12 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
       t.created_at as task_created_at,
       t.updated_at as task_updated_at,
       t.deleted_at as task_deleted_at,
+      t.isRecurringTemplate as task_isRecurringTemplate,
+      t.recurrenceRuleJson as task_recurrenceRuleJson,
+      t.recurringSeriesId as task_recurringSeriesId,
+      t.parentTemplateId as task_parentTemplateId,
+      t.occurrenceDate as task_occurrenceDate,
+      t.isOccurrenceOverride as task_isOccurrenceOverride,
 
       tg.task_id as grade_task_id,
       tg.grade_percent as grade_percent,
@@ -75,6 +81,22 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
   if (!filters?.includeCompleted) {
     query += ` AND t.status != 'done'`;
   }
+  
+  // Always hide old completed life tasks (more than 7 days past due date)
+  // This keeps the list clean while still showing recently completed tasks
+  if (filters?.workspace === 'life') {
+    query += ` AND (t.status != 'done' OR (t.status = 'done' AND (t.due_at IS NULL OR datetime(t.due_at) >= datetime('now', '-7 days'))))`;
+  }
+  
+  // Hide future recurring instances - only show instances on or before their due date
+  // This ensures recurring tasks only appear when their date arrives (at 12am, not at the specific time)
+  // Templates and non-recurring tasks are always shown
+  query += ` AND (
+    t.isRecurringTemplate = 1 
+    OR t.parentTemplateId IS NULL 
+    OR t.due_at IS NULL 
+    OR date(t.due_at) <= date('now')
+  )`;
 
   if (filters?.courseIds && filters.courseIds.length > 0) {
     const placeholders = filters.courseIds.map(() => '?').join(',');
@@ -163,6 +185,12 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
         created_at: row.task_created_at,
         updated_at: row.task_updated_at,
         deleted_at: row.task_deleted_at,
+        isRecurringTemplate: Boolean(row.task_isRecurringTemplate),
+        recurrenceRuleJson: row.task_recurrenceRuleJson || null,
+        recurringSeriesId: row.task_recurringSeriesId || null,
+        parentTemplateId: row.task_parentTemplateId || null,
+        occurrenceDate: row.task_occurrenceDate || null,
+        isOccurrenceOverride: Boolean(row.task_isOccurrenceOverride),
       };
 
       if (row.course_id) {
@@ -214,23 +242,33 @@ export async function getAllTasks(filters?: TaskFilters): Promise<TaskWithCourse
 
 export async function getTaskById(id: string): Promise<Task | null> {
   const db = await getDatabase();
-  const tasks = await db.select<Task[]>(
+  const rows = await db.select<any[]>(
     'SELECT * FROM tasks WHERE id = ? AND deleted_at IS NULL',
     [id]
   );
-  return tasks[0] || null;
+  if (!rows[0]) return null;
+
+  const row = rows[0];
+  // Convert SQLite integer booleans to JavaScript booleans
+  return {
+    ...row,
+    isRecurringTemplate: Boolean(row.isRecurringTemplate),
+    isOccurrenceOverride: Boolean(row.isOccurrenceOverride),
+  } as Task;
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
   const id = generateId();
   const now = new Date().toISOString();
+  const seriesId = input.recurringSeriesId || (input.isRecurringTemplate ? id : null);
 
   await executeWithRetry(
     `INSERT INTO tasks (
       id, title, description, due_at, type, course_id, life_category_id, workspace, status,
       priority_manual, effort_estimate_minutes, tags, source,
+      isRecurringTemplate, recurrenceRuleJson, recurringSeriesId, parentTemplateId, occurrenceDate, isOccurrenceOverride,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.title,
@@ -245,6 +283,12 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       input.effort_estimate_minutes || null,
       input.tags || null,
       'manual',
+      input.isRecurringTemplate ? 1 : 0,
+      input.recurrenceRuleJson || null,
+      seriesId,
+      input.parentTemplateId || null,
+      input.occurrenceDate || null,
+      input.isOccurrenceOverride ? 1 : 0,
       now,
       now,
     ]
@@ -281,6 +325,26 @@ export async function updateTask(input: UpdateTaskInput): Promise<Task> {
   const effort_estimate_minutes = input.effort_estimate_minutes !== undefined ? (input.effort_estimate_minutes || null) : currentTask.effort_estimate_minutes;
   const tags = input.tags !== undefined ? (input.tags || null) : currentTask.tags;
 
+  // Handle recurring fields if provided
+  const isRecurringTemplate = input.isRecurringTemplate !== undefined 
+    ? (input.isRecurringTemplate ? 1 : 0)
+    : (currentTask.isRecurringTemplate ? 1 : 0);
+  const recurrenceRuleJson = input.recurrenceRuleJson !== undefined 
+    ? input.recurrenceRuleJson 
+    : currentTask.recurrenceRuleJson;
+  const recurringSeriesId = input.recurringSeriesId !== undefined 
+    ? input.recurringSeriesId 
+    : currentTask.recurringSeriesId;
+  const parentTemplateId = input.parentTemplateId !== undefined 
+    ? input.parentTemplateId 
+    : currentTask.parentTemplateId;
+  const occurrenceDate = input.occurrenceDate !== undefined 
+    ? input.occurrenceDate 
+    : currentTask.occurrenceDate;
+  const isOccurrenceOverride = input.isOccurrenceOverride !== undefined 
+    ? (input.isOccurrenceOverride ? 1 : 0)
+    : (currentTask.isOccurrenceOverride ? 1 : 0);
+
   try {
     await executeWithRetry(
       `UPDATE tasks SET 
@@ -295,6 +359,12 @@ export async function updateTask(input: UpdateTaskInput): Promise<Task> {
         priority_manual = ?,
         effort_estimate_minutes = ?,
         tags = ?,
+        isRecurringTemplate = ?,
+        recurrenceRuleJson = ?,
+        recurringSeriesId = ?,
+        parentTemplateId = ?,
+        occurrenceDate = ?,
+        isOccurrenceOverride = ?,
         updated_at = ?
       WHERE id = ?`,
       [
@@ -309,6 +379,12 @@ export async function updateTask(input: UpdateTaskInput): Promise<Task> {
         priority_manual,
         effort_estimate_minutes,
         tags,
+        isRecurringTemplate,
+        recurrenceRuleJson,
+        recurringSeriesId,
+        parentTemplateId,
+        occurrenceDate,
+        isOccurrenceOverride,
         now,
         input.id,
       ]
@@ -326,5 +402,113 @@ export async function updateTask(input: UpdateTaskInput): Promise<Task> {
 export async function deleteTask(id: string): Promise<void> {
   const now = new Date().toISOString();
   await executeWithRetry('UPDATE tasks SET deleted_at = ? WHERE id = ?', [now, id]);
+}
+
+/**
+ * Get all recurring task templates (life tasks only)
+ */
+export async function getRecurringTemplates(): Promise<TaskWithCourse[]> {
+  const db = await getDatabase();
+  
+  const rows = await db.select<any[]>(`
+    SELECT
+      t.id as task_id,
+      t.title as task_title,
+      t.description as task_description,
+      t.due_at as task_due_at,
+      t.type as task_type,
+      t.life_category_id as task_life_category_id,
+      t.workspace as task_workspace,
+      t.status as task_status,
+      t.tags as task_tags,
+      t.recurrenceRuleJson as task_recurrenceRuleJson,
+      t.recurringSeriesId as task_recurringSeriesId,
+      t.created_at as task_created_at,
+      t.updated_at as task_updated_at,
+      t.isRecurringTemplate as task_isRecurringTemplate,
+      
+      lc.id as life_category_id,
+      lc.name as life_category_name,
+      lc.color as life_category_color,
+      lc.created_at as life_category_created_at,
+      lc.updated_at as life_category_updated_at,
+      lc.deleted_at as life_category_deleted_at
+    FROM tasks t
+    LEFT JOIN life_categories lc ON t.life_category_id = lc.id AND lc.deleted_at IS NULL
+    WHERE t.deleted_at IS NULL
+      AND t.isRecurringTemplate = 1
+      AND t.workspace = 'life'
+    ORDER BY t.title ASC
+  `);
+
+  return rows.map((row) => {
+    const task: TaskWithCourse = {
+      id: row.task_id,
+      title: row.task_title,
+      description: row.task_description,
+      due_at: row.task_due_at,
+      type: row.task_type,
+      course_id: null,
+      life_category_id: row.task_life_category_id,
+      workspace: row.task_workspace,
+      status: row.task_status,
+      priority_manual: null,
+      effort_estimate_minutes: null,
+      tags: row.task_tags,
+      source: 'manual',
+      created_at: row.task_created_at,
+      updated_at: row.task_updated_at,
+      deleted_at: null,
+      isRecurringTemplate: Boolean(row.task_isRecurringTemplate),
+      recurrenceRuleJson: row.task_recurrenceRuleJson || null,
+      recurringSeriesId: row.task_recurringSeriesId || null,
+      parentTemplateId: null,
+      occurrenceDate: null,
+      isOccurrenceOverride: false,
+    };
+
+    if (row.life_category_id) {
+      task.lifeCategory = {
+        id: row.life_category_id,
+        name: row.life_category_name,
+        color: row.life_category_color || '#6B7280',
+        created_at: row.life_category_created_at,
+        updated_at: row.life_category_updated_at,
+        deleted_at: row.life_category_deleted_at,
+      };
+    }
+
+    return task;
+  });
+}
+
+/**
+ * Delete a recurring instance and all future instances in the same series
+ */
+export async function deleteRecurringInstanceAndFuture(instanceId: string): Promise<void> {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  
+  // Get the instance to find its occurrence date and series
+  const instance = await getTaskById(instanceId);
+  if (!instance || !instance.parentTemplateId || !instance.occurrenceDate) {
+    throw new Error('Task is not a recurring instance');
+  }
+  
+  const occurrenceDate = instance.occurrenceDate;
+  const seriesId = instance.recurringSeriesId;
+  
+  // Delete this instance
+  await executeWithRetry('UPDATE tasks SET deleted_at = ? WHERE id = ?', [now, instanceId]);
+  
+  // Delete all future instances in the same series (same or later occurrence date)
+  await executeWithRetry(
+    `UPDATE tasks SET deleted_at = ? 
+     WHERE recurringSeriesId = ? 
+     AND occurrenceDate >= ? 
+     AND deleted_at IS NULL
+     AND id != ?`,
+    [now, seriesId, occurrenceDate, instanceId]
+  );
 }
 

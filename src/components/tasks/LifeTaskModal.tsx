@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import type { TaskWithCourse } from '../../lib/types';
+import type { TaskWithCourse, RecurrenceRule } from '../../lib/types';
 import { useCreateTask, useUpdateTask, useDeleteTask } from '../../hooks/useTasks';
 import { useSubtasks, useCreateSubtask, useUpdateSubtask, useDeleteSubtask } from '../../hooks/useSubtasks';
 import { useLifeCategories } from '../../hooks/useLifeCategories';
 import { useCreateLifeCategory } from '../../hooks/useLifeCategories';
+import { ensureRecurringInstances } from '../../services/recurrence';
+import { generateId } from '../../lib/utils';
+import RecurringEditDialog from './RecurringEditDialog';
+import RecurringDeleteDialog from './RecurringDeleteDialog';
+import { useDeleteRecurringInstanceAndFuture } from '../../hooks/useTasks';
 
 interface LifeTaskModalProps {
   task?: TaskWithCourse;
@@ -14,12 +19,27 @@ interface LifeTaskModalProps {
 
 export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalProps) {
   const [newSubtaskText, setNewSubtaskText] = useState('');
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceRule, setRecurrenceRule] = useState<Partial<RecurrenceRule>>({
+    frequency: 'DAILY',
+    interval: 1,
+    endType: 'NEVER',
+  });
+  const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>([]);
+  const [showRecurringDialog, setShowRecurringDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editMode, setEditMode] = useState<'instance' | 'series' | null>(null);
+  const [pendingFormData, setPendingFormData] = useState<any>(null);
   const isEditing = !!task;
+  const isInstance = task && task.parentTemplateId;
 
   const { data: subtasks = [] } = useSubtasks(task?.id || '');
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
+  const deleteRecurringAndFuture = useDeleteRecurringInstanceAndFuture();
   const createSubtask = useCreateSubtask();
   const updateSubtask = useUpdateSubtask();
   const deleteSubtask = useDeleteSubtask();
@@ -34,7 +54,29 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
     life_category_name: '',
   };
 
-  const { register, handleSubmit, reset, setValue, getValues } = useForm({
+  // Initialize recurrence state from task
+  useEffect(() => {
+    if (task) {
+      if (task.isRecurringTemplate && task.recurrenceRuleJson) {
+        try {
+          const rule = JSON.parse(task.recurrenceRuleJson);
+          setIsRecurring(true);
+          setRecurrenceRule(rule);
+          setSelectedWeekdays(rule.byWeekday || []);
+        } catch {
+          // Invalid rule, ignore
+        }
+      } else {
+        setIsRecurring(false);
+      }
+    } else {
+      setIsRecurring(false);
+      setRecurrenceRule({ frequency: 'DAILY', interval: 1, endType: 'NEVER' });
+      setSelectedWeekdays([]);
+    }
+  }, [task]);
+
+  const { register, handleSubmit, reset, setValue, watch } = useForm({
     mode: 'onSubmit',
     defaultValues: task
       ? {
@@ -49,8 +91,14 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
 
   useEffect(() => {
     // When opening, always reset the form so "New Task" is a fresh blank form.
-    if (!isOpen) return;
+    if (!isOpen) {
+      setCategoryDropdownOpen(false);
+      setNewCategoryName('');
+      return;
+    }
     setNewSubtaskText('');
+    setCategoryDropdownOpen(false);
+    setNewCategoryName('');
     if (task) {
       reset({
         title: task.title,
@@ -64,24 +112,119 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
     }
   }, [isOpen, task, reset]);
 
+  const handleEditSubmit = async (data: any, mode: 'instance' | 'series') => {
+    try {
+      if (mode === 'instance') {
+        // Edit this occurrence only - mark as override
+        await updateTask.mutateAsync({
+          id: task!.id,
+          ...data,
+          due_at: data.due_at || null,
+          life_category_id: data.life_category_id || null,
+          isOccurrenceOverride: true,
+        });
+      } else {
+        // Edit entire series - update template and regenerate
+        if (!task!.parentTemplateId) return;
+
+        // Get template
+        const templateId = task!.parentTemplateId;
+        // Update template with new data
+        await updateTask.mutateAsync({
+          id: templateId,
+          ...data,
+          due_at: data.due_at || null,
+          life_category_id: data.life_category_id || null,
+        });
+
+        // Regenerate future instances (past and overridden won't change)
+        await ensureRecurringInstances(45);
+      }
+      onClose();
+    } catch (error) {
+      console.error('Failed to update task:', error);
+    }
+  };
+
   const onSubmit = async (data: any) => {
     try {
       if (isEditing) {
-        await updateTask.mutateAsync({
-          id: task.id,
-          ...data,
-          due_at: data.due_at || null,
-          life_category_id: data.life_category_id || null,
-        });
+        if (isInstance && !editMode) {
+          // Show dialog to choose instance vs series
+          setPendingFormData(data);
+          setShowRecurringDialog(true);
+          return;
+        }
+
+        if (editMode === 'instance') {
+          await handleEditSubmit(data, 'instance');
+        } else if (editMode === 'series') {
+          await handleEditSubmit(data, 'series');
+        } else {
+          // Normal edit (not a recurring instance)
+          await updateTask.mutateAsync({
+            id: task.id,
+            ...data,
+            due_at: data.due_at || null,
+            life_category_id: data.life_category_id || null,
+          });
+          onClose();
+        }
       } else {
-        await createTask.mutateAsync({
-          ...data,
-          due_at: data.due_at || null,
-          status: 'todo',
-          type: 'Other',
-          life_category_id: data.life_category_id || null,
-          workspace: 'life',
-        });
+        // Creating new task
+        if (isRecurring) {
+          // Extract time from start date/time for recurrence rule
+          let timeOfDay: string | undefined;
+          if (data.due_at) {
+            const date = new Date(data.due_at);
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            timeOfDay = `${hours}:${minutes}`;
+          }
+
+          // Create recurring template
+          // Ensure COUNT is only set if endType is COUNT
+          const rule: RecurrenceRule = {
+            frequency: recurrenceRule.frequency || 'DAILY',
+            interval: recurrenceRule.interval || 1,
+            byWeekday: recurrenceRule.frequency === 'WEEKLY' ? selectedWeekdays : undefined,
+            timeOfDay: timeOfDay,
+            endType: recurrenceRule.endType || 'NEVER',
+            untilDate: recurrenceRule.endType === 'UNTIL' ? recurrenceRule.untilDate : undefined,
+            count: recurrenceRule.endType === 'COUNT' ? recurrenceRule.count : undefined,
+          };
+          
+          // Safety check: clear COUNT if endType is not COUNT
+          if (rule.endType !== 'COUNT') {
+            rule.count = undefined;
+          }
+
+          const seriesId = generateId();
+          await createTask.mutateAsync({
+            ...data,
+            due_at: data.due_at || null, // This is the start date/time for the template
+            status: 'todo',
+            type: 'Other',
+            life_category_id: data.life_category_id || null,
+            workspace: 'life',
+            isRecurringTemplate: true,
+            recurrenceRuleJson: JSON.stringify(rule),
+            recurringSeriesId: seriesId,
+          });
+
+          // Generate initial instances
+          await ensureRecurringInstances(90);
+        } else {
+          // Create normal task
+          await createTask.mutateAsync({
+            ...data,
+            due_at: data.due_at || null,
+            status: 'todo',
+            type: 'Other',
+            life_category_id: data.life_category_id || null,
+            workspace: 'life',
+          });
+        }
       }
       onClose();
     } catch (error) {
@@ -90,12 +233,41 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
   };
 
   const handleDelete = async () => {
-    if (!task || !confirm('Delete this task?')) return;
+    if (!task) return;
+    
+    // If it's a recurring instance, show the delete dialog
+    if (isInstance) {
+      setShowDeleteDialog(true);
+      return;
+    }
+    
+    // For non-recurring tasks or templates, use normal delete
+    if (!confirm('Delete this task?')) return;
     try {
       await deleteTask.mutateAsync(task.id);
       onClose();
     } catch (error) {
       console.error('Failed to delete task:', error);
+    }
+  };
+
+  const handleDeleteInstance = async () => {
+    if (!task) return;
+    try {
+      await deleteTask.mutateAsync(task.id);
+      onClose();
+    } catch (error) {
+      console.error('Failed to delete instance:', error);
+    }
+  };
+
+  const handleDeleteInstanceAndFuture = async () => {
+    if (!task) return;
+    try {
+      await deleteRecurringAndFuture.mutateAsync(task.id);
+      onClose();
+    } catch (error) {
+      console.error('Failed to delete instance and future:', error);
     }
   };
 
@@ -155,57 +327,131 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Category</label>
-              {/* Notion-style: type to pick by name, create on Enter/blur, but store the selected id */}
-              <input
-                {...register('life_category_name')}
-                list="life-categories"
-                placeholder="Type to select or create…"
-                className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                onKeyDown={async (e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const name = (getValues('life_category_name') || '').trim();
-                    if (!name) return;
-                    const existing = lifeCategories.find((c) => c.name.toLowerCase() === name.toLowerCase());
-                    if (existing) {
-                      setValue('life_category_id', existing.id, { shouldDirty: true });
-                      setValue('life_category_name', existing.name, { shouldDirty: true });
-                      return;
-                    }
-                    const created = await createLifeCategory.mutateAsync({ name });
-                    setValue('life_category_id', created.id, { shouldDirty: true });
-                    setValue('life_category_name', created.name, { shouldDirty: true });
-                  }
-                }}
-                onBlur={async () => {
-                  const val = (getValues('life_category_name') || '').trim();
-                  if (!val) return;
-                  // If user typed a name, convert to id.
-                  const existing = lifeCategories.find((c) => c.name.toLowerCase() === val.toLowerCase());
-                  if (existing) {
-                    setValue('life_category_id', existing.id, { shouldDirty: true });
-                    setValue('life_category_name', existing.name, { shouldDirty: true });
-                  }
-                }}
-              />
-              <datalist id="life-categories">
-                {lifeCategories.map((c) => (
-                  <option key={c.id} value={c.name} />
-                ))}
-              </datalist>
-              {/* hidden field that actually gets saved */}
-              <input type="hidden" {...register('life_category_id')} />
-            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Category</label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                    className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      {(() => {
+                        const selectedCategory = lifeCategories.find((c) => c.id === watch('life_category_id'));
+                        if (selectedCategory) {
+                          return (
+                            <>
+                              <span
+                                className="w-3 h-3 rounded-sm"
+                                style={{ backgroundColor: selectedCategory.color }}
+                              />
+                              <span>{selectedCategory.name}</span>
+                            </>
+                          );
+                        }
+                        return <span className="text-muted-foreground">Select a category...</span>;
+                      })()}
+                    </span>
+                    <svg
+                      className={`w-4 h-4 text-muted-foreground transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {categoryDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setCategoryDropdownOpen(false)}
+                      />
+                      <div className="absolute z-20 w-full mt-1 bg-background border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {lifeCategories.map((c) => {
+                          const isSelected = watch('life_category_id') === c.id;
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setValue('life_category_id', c.id, { shouldDirty: true });
+                                setValue('life_category_name', c.name, { shouldDirty: true });
+                                setCategoryDropdownOpen(false);
+                              }}
+                              className={`w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-muted transition-colors ${
+                                isSelected ? 'bg-muted/60' : ''
+                              }`}
+                            >
+                              <span
+                                className="w-3 h-3 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: c.color }}
+                              />
+                              <span>{c.name}</span>
+                            </button>
+                          );
+                        })}
+                        <div className="border-t border-border p-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              placeholder="New category name..."
+                              className="flex-1 px-2 py-1.5 text-sm bg-muted border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const value = newCategoryName.trim();
+                                  if (value) {
+                                    const created = await createLifeCategory.mutateAsync({ name: value });
+                                    setValue('life_category_id', created.id, { shouldDirty: true });
+                                    setValue('life_category_name', created.name, { shouldDirty: true });
+                                    setNewCategoryName('');
+                                    setCategoryDropdownOpen(false);
+                                  }
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const value = newCategoryName.trim();
+                                if (value) {
+                                  const created = await createLifeCategory.mutateAsync({ name: value });
+                                  setValue('life_category_id', created.id, { shouldDirty: true });
+                                  setValue('life_category_name', created.name, { shouldDirty: true });
+                                  setNewCategoryName('');
+                                  setCategoryDropdownOpen(false);
+                                }
+                              }}
+                              className="px-3 py-1.5 text-sm bg-foreground text-background rounded hover:opacity-90"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Hidden fields to register with react-hook-form */}
+                <input type="hidden" {...register('life_category_id')} />
+                <input type="hidden" {...register('life_category_name')} />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Due Date</label>
-              <input
-                {...register('due_at')}
-                type="datetime-local"
-                className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              {!isRecurring && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Due Date</label>
+                  <input
+                    {...register('due_at')}
+                    type="datetime-local"
+                    className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
             </div>
 
             <div>
@@ -216,6 +462,159 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
                 className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
+
+            {!isEditing && (
+              <div className="border-t border-border pt-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurring(!isRecurring)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 transition-all ${
+                      isRecurring
+                        ? 'bg-primary/20 border-primary text-primary font-semibold'
+                        : 'bg-muted border-border hover:border-primary/50 hover:bg-muted/80'
+                    }`}
+                  >
+                    <svg
+                      className={`w-5 h-5 ${isRecurring ? 'text-primary' : 'text-muted-foreground'}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                    <span className="text-base font-medium">Recurring</span>
+                  </button>
+                </div>
+
+                {isRecurring && (
+                  <div className="space-y-4 pl-6">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Start Date & Time</label>
+                      <input
+                        {...register('due_at')}
+                        type="datetime-local"
+                        className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Frequency</label>
+                        <select
+                          value={recurrenceRule.frequency || 'DAILY'}
+                          onChange={(e) => {
+                            const freq = e.target.value as 'DAILY' | 'WEEKLY' | 'MONTHLY';
+                            setRecurrenceRule({ ...recurrenceRule, frequency: freq });
+                            if (freq !== 'WEEKLY') {
+                              setSelectedWeekdays([]);
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="DAILY">Daily</option>
+                          <option value="WEEKLY">Weekly</option>
+                          <option value="MONTHLY">Monthly</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Interval</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={recurrenceRule.interval || 1}
+                          onChange={(e) =>
+                            setRecurrenceRule({ ...recurrenceRule, interval: parseInt(e.target.value) || 1 })
+                          }
+                          className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+
+                    {recurrenceRule.frequency === 'WEEKLY' && (
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Weekdays</label>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { value: 'MO', label: 'Mon' },
+                            { value: 'TU', label: 'Tue' },
+                            { value: 'WE', label: 'Wed' },
+                            { value: 'TH', label: 'Thu' },
+                            { value: 'FR', label: 'Fri' },
+                            { value: 'SA', label: 'Sat' },
+                            { value: 'SU', label: 'Sun' },
+                          ].map((day) => (
+                            <button
+                              key={day.value}
+                              type="button"
+                              onClick={() => {
+                                if (selectedWeekdays.includes(day.value)) {
+                                  setSelectedWeekdays(selectedWeekdays.filter((d) => d !== day.value));
+                                } else {
+                                  setSelectedWeekdays([...selectedWeekdays, day.value]);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-sm border ${
+                                selectedWeekdays.includes(day.value)
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : 'bg-muted border-border hover:bg-muted/80'
+                              }`}
+                            >
+                              {day.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">End</label>
+                      <select
+                        value={recurrenceRule.endType || 'NEVER'}
+                        onChange={(e) => {
+                          const endType = e.target.value as 'NEVER' | 'UNTIL' | 'COUNT';
+                          setRecurrenceRule({ ...recurrenceRule, endType });
+                        }}
+                        className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary mb-2"
+                      >
+                        <option value="NEVER">Never</option>
+                        <option value="UNTIL">Until date</option>
+                        <option value="COUNT">After N occurrences</option>
+                      </select>
+
+                      {recurrenceRule.endType === 'UNTIL' && (
+                        <input
+                          type="date"
+                          value={recurrenceRule.untilDate || ''}
+                          onChange={(e) => setRecurrenceRule({ ...recurrenceRule, untilDate: e.target.value })}
+                          className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      )}
+
+                      {recurrenceRule.endType === 'COUNT' && (
+                        <input
+                          type="number"
+                          min="1"
+                          value={recurrenceRule.count || ''}
+                          onChange={(e) =>
+                            setRecurrenceRule({ ...recurrenceRule, count: parseInt(e.target.value) || undefined })
+                          }
+                          placeholder="Number of occurrences"
+                          className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {isEditing && (
               <div>
@@ -287,6 +686,37 @@ export default function LifeTaskModal({ task, isOpen, onClose }: LifeTaskModalPr
           </form>
         </div>
       </div>
+
+      {showRecurringDialog && pendingFormData && (
+        <RecurringEditDialog
+          isOpen={showRecurringDialog}
+          onClose={() => {
+            setShowRecurringDialog(false);
+            setEditMode(null);
+            setPendingFormData(null);
+          }}
+          onEditInstance={() => {
+            setEditMode('instance');
+            handleEditSubmit(pendingFormData, 'instance');
+          }}
+          onEditSeries={() => {
+            setEditMode('series');
+            handleEditSubmit(pendingFormData, 'series');
+          }}
+          taskTitle={task?.title || ''}
+        />
+      )}
+
+      {showDeleteDialog && task && (
+        <RecurringDeleteDialog
+          isOpen={showDeleteDialog}
+          onClose={() => setShowDeleteDialog(false)}
+          onDeleteInstance={handleDeleteInstance}
+          onDeleteInstanceAndFuture={handleDeleteInstanceAndFuture}
+          taskTitle={task.title}
+          taskDate={task.due_at}
+        />
+      )}
     </div>
   );
 }

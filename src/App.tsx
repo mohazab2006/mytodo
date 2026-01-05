@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { initDatabase } from './db/client';
+import { ensureRecurringInstances } from './services/recurrence';
 import Layout from './components/layout/Layout';
 import HomePage from './pages/HomePage';
 import TodayPage from './pages/TodayPage';
@@ -11,7 +12,12 @@ import LifePage from './pages/LifePage';
 function App() {
   useEffect(() => {
     // Initialize database on app load
-    initDatabase().catch(console.error);
+    initDatabase()
+      .then(() => {
+        // Generate recurring instances after DB is ready
+        ensureRecurringInstances(90).catch(console.error);
+      })
+      .catch(console.error);
   }, []);
 
   return (

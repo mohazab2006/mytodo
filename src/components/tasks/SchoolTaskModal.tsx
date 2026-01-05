@@ -17,6 +17,8 @@ interface SchoolTaskModalProps {
 
 export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskModalProps) {
   const [newSubtaskText, setNewSubtaskText] = useState('');
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
   const isEditing = !!task;
 
   const { data: courses = [] } = useCourses();
@@ -69,8 +71,14 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
 
   useEffect(() => {
     // When opening, always reset the form so "New Task" is a fresh blank form.
-    if (!isOpen) return;
+    if (!isOpen) {
+      setTypeDropdownOpen(false);
+      setNewTypeName('');
+      return;
+    }
     setNewSubtaskText('');
+    setTypeDropdownOpen(false);
+    setNewTypeName('');
     if (task) {
       reset({
         title: task.title,
@@ -260,30 +268,110 @@ export default function SchoolTaskModal({ task, isOpen, onClose }: SchoolTaskMod
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Type</label>
-                {/* Notion-style: type to select, and if it doesn't exist, it will be created on Enter/blur */}
-                <input
-                  {...register('type')}
-                  list="task-types"
-                  placeholder="e.g. Exam"
-                  className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      ensureTypeExists();
-                    }
-                  }}
-                  onBlur={() => {
-                    ensureTypeExists();
-                  }}
-                />
-                <datalist id="task-types">
-                  {(taskTypes.length > 0
-                    ? taskTypes.map((t) => t.name)
-                    : Object.values(TaskType)
-                  ).map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setTypeDropdownOpen(!typeDropdownOpen)}
+                    className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      {(() => {
+                        const selectedType = taskTypes.find((t) => t.name === watch('type'));
+                        if (selectedType) {
+                          return (
+                            <>
+                              <span
+                                className="w-3 h-3 rounded-sm"
+                                style={{ backgroundColor: selectedType.color }}
+                              />
+                              <span>{selectedType.name}</span>
+                            </>
+                          );
+                        }
+                        return <span className="text-muted-foreground">Select a type...</span>;
+                      })()}
+                    </span>
+                    <svg
+                      className={`w-4 h-4 text-muted-foreground transition-transform ${typeDropdownOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {typeDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setTypeDropdownOpen(false)}
+                      />
+                      <div className="absolute z-20 w-full mt-1 bg-background border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {(taskTypes.length > 0 ? taskTypes : Object.values(TaskType).map((name) => ({ id: name, name, color: '#6B7280' }))).map((t) => {
+                          const isSelected = watch('type') === t.name;
+                          return (
+                            <button
+                              key={t.id || t.name}
+                              type="button"
+                              onClick={() => {
+                                setValue('type', t.name, { shouldDirty: true });
+                                setTypeDropdownOpen(false);
+                              }}
+                              className={`w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-muted transition-colors ${
+                                isSelected ? 'bg-muted/60' : ''
+                              }`}
+                            >
+                              <span
+                                className="w-3 h-3 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: t.color }}
+                              />
+                              <span>{t.name}</span>
+                            </button>
+                          );
+                        })}
+                        <div className="border-t border-border p-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newTypeName}
+                              onChange={(e) => setNewTypeName(e.target.value)}
+                              placeholder="New type name..."
+                              className="flex-1 px-2 py-1.5 text-sm bg-muted border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const value = newTypeName.trim();
+                                  if (value) {
+                                    setValue('type', value, { shouldDirty: true });
+                                    await ensureTypeExists();
+                                    setNewTypeName('');
+                                    setTypeDropdownOpen(false);
+                                  }
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const value = newTypeName.trim();
+                                if (value) {
+                                  setValue('type', value, { shouldDirty: true });
+                                  await ensureTypeExists();
+                                  setNewTypeName('');
+                                  setTypeDropdownOpen(false);
+                                }
+                              }}
+                              className="px-3 py-1.5 text-sm bg-foreground text-background rounded hover:opacity-90"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div>
