@@ -78,5 +78,3 @@ The AI features are the main focus right now—I want to make task management ge
 Used [rapidtables](https://www.rapidtables.com) as a reference for some parts of the implementation.
 
 ---
-
-*Built with ❤️ and way too much coffee*
