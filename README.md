@@ -24,8 +24,37 @@ Desktop todo application built with Tauri 2, React 18, and TypeScript. SQLite da
 
 ## Development
 
+Requires Node.js 18+ and Rust toolchain.
+
+### Setup
 ```bash
 npm install && npm run tauri:dev
 ```
 
-Requires Node.js 18+ and Rust toolchain.
+### Run Development Server
+```bash
+npm run tauri:dev
+```
+
+### Build
+```bash
+npm run tauri:build
+```
+
+## Future Plans
+
+I'm actively working on expanding this project with exciting new features:
+
+- **🖥️ Desktop Widgets**: Quick-access widgets for viewing and completing tasks without opening the full app
+- **🤖 AI-Powered Features**: 
+  - Smart task prioritization based on deadlines and workload
+  - Auto-scheduling suggestions
+  - Intelligent task categorization
+  - AI-generated task recommendations
+- **📱 Mobile App** (possibly): If I decide to expand to mobile, I'll add a phone app with widgets showing today's tasks and upcoming deadlines
+
+The AI features are a major focus for future phases, aiming to make task management smarter and more intuitive.
+
+## Credits
+
+Used [rapidtables](https://www.rapidtables.com) as a reference for some parts of the implementation.
